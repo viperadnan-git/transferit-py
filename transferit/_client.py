@@ -26,7 +26,7 @@ from __future__ import annotations
 import logging
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from ._actions._download import do_download
 from ._actions._info import do_info
@@ -60,6 +60,10 @@ class Transferit:
         (``"7d"``, ``"2h30m"``) — overridable per call.
     default_concurrency
         Default number of WebSocket connections per file upload.
+    default_parallel
+        Default number of files uploaded simultaneously per transfer.  Leave
+        as ``None`` (the default) to have it match ``max(2, len(usc))`` at
+        upload time — the same rule bdl4.js's ``ulQueue.setSize`` uses.
 
     Thread safety
     -------------
@@ -75,6 +79,7 @@ class Transferit:
         default_sender: str | None = None,
         default_expiry: int | str | None = None,
         default_concurrency: int = DEFAULT_CONCURRENCY,
+        default_parallel: int | None = None,
     ) -> None:
         self._api: MegaAPI = api if api is not None else MegaAPI()
         self._owns_api: bool = api is None
@@ -84,6 +89,7 @@ class Transferit:
         self.default_sender = default_sender
         self.default_expiry = default_expiry
         self.default_concurrency = default_concurrency
+        self.default_parallel = default_parallel
 
     # ---- context manager ----
 
@@ -128,19 +134,27 @@ class Transferit:
         recipients: list[str] | None = None,
         schedule: int | None = None,
         concurrency: int | None = None,
+        parallel: int | None = None,
+        exclude: Iterable[str] | None = None,
+        on_start: Callable[[int, int], None] | None = None,
         on_progress: ProgressCallback | None = None,
         on_file_start: Callable[[int, Path, int], None] | None = None,
+        on_file_progress: Callable[[int, Path, int, int], None] | None = None,
         on_file_done: Callable[[int, Path, int], None] | None = None,
     ) -> UploadResult:
         """
         Upload ``path`` (file or folder) and return an :class:`UploadResult`.
 
+        ``concurrency`` is the number of WebSocket connections **per file**;
+        ``parallel`` is the number of files uploaded simultaneously.  The
+        total socket count is roughly ``parallel × concurrency``.
+
+        ``exclude`` is a sequence of :mod:`fnmatch` glob patterns; matching
+        files or directories inside the uploaded folder are skipped.
+
         Every keyword defaulting to ``None`` falls back to the matching
         ``default_*`` attribute on this instance (if any).
         """
-        # MegaAPI.create_ephemeral_session is itself idempotent + thread-safe,
-        # so no local flag/lock is needed — it no-ops when sid is already set.
-        self._api.create_ephemeral_session()
         return do_upload(
             self._api,
             path,
@@ -157,8 +171,12 @@ class Transferit:
             concurrency=concurrency
             if concurrency is not None
             else self.default_concurrency,
+            parallel=parallel if parallel is not None else self.default_parallel,
+            exclude=exclude,
+            on_start=on_start,
             on_progress=on_progress,
             on_file_start=on_file_start,
+            on_file_progress=on_file_progress,
             on_file_done=on_file_done,
         )
 

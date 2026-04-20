@@ -100,3 +100,30 @@ class TestWalkFolder:
         files, dirs = walk_folder(tmp_path)
         assert files == []
         assert "empty-sub" in dirs
+
+    def test_exclude_prunes_dirs_and_files(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".git" / "HEAD").write_text("ref: refs/heads/main")
+        (tmp_path / "__pycache__").mkdir()
+        (tmp_path / "__pycache__" / "x.pyc").write_bytes(b"\x00")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "a.py").write_text("a")
+        (tmp_path / "src" / "a.pyc").write_bytes(b"\x00")
+        (tmp_path / "README.md").write_text("r")
+
+        files, dirs = walk_folder(tmp_path, exclude=[".git", "__pycache__", "*.pyc"])
+        names = sorted(f.name for f in files)
+        assert names == ["README.md", "a.py"]
+        # Excluded directories are pruned entirely.
+        assert dirs == ["src"]
+
+    def test_exclude_matches_rel_path(self, tmp_path):
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "generated").mkdir()
+        (tmp_path / "src" / "generated" / "x.py").write_text("g")
+        (tmp_path / "src" / "kept.py").write_text("k")
+
+        files, dirs = walk_folder(tmp_path, exclude=["src/generated"])
+        names = sorted(f.name for f in files)
+        assert names == ["kept.py"]
+        assert "src/generated" not in dirs

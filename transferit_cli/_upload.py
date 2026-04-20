@@ -17,6 +17,7 @@ from transferit._transfer import (
 )
 
 from ._common import (
+    CONSOLE,
     ExpiryDuration,
     bytes_progress,
     humanise_bytes,
@@ -36,6 +37,7 @@ from ._common import (
         "Examples:\n\n"
         "\b\n"
         "  transferit upload report.pdf\n"
+        "  transferit upload ./src -x '.git' -x '__pycache__'\n"
         "  transferit upload ./project/ -e 7d --sender me@example.com\n"
         "  transferit upload big.mp4 -r alice@x.com -r bob@x.com \\\n"
         "                   --sender me@x.com --expiry 30d"
@@ -55,7 +57,18 @@ from ._common import (
     type=click.IntRange(1, 32),
     default=8,
     show_default=True,
-    help="Parallel upload connections per file.  Raise on fast links for more throughput.",
+    help="Parallel connections per file.  Raise on fast links for more throughput.",
+)
+@click.option(
+    "-j",
+    "--parallel",
+    type=click.IntRange(1, 16),
+    default=None,
+    help=(
+        "Files uploaded at the same time.  Auto-chosen by default (usually "
+        "2–4).  Raise for transfers with lots of small files; leave alone "
+        "for a single big file."
+    ),
 )
 @click.option(
     "-m",
@@ -65,7 +78,7 @@ from ._common import (
 @click.option(
     "-p",
     "--password",
-    help="Require this password to open the transfer (hashed locally before it leaves your machine).",
+    help="Require this password to open the transfer.  Never sent in plain text.",
 )
 @click.option(
     "-s",
@@ -118,6 +131,17 @@ from ._common import (
     ),
 )
 @click.option(
+    "-x",
+    "--exclude",
+    "excludes",
+    metavar="PATTERN",
+    multiple=True,
+    help=(
+        "Skip files or folders matching this glob pattern.  Repeat for "
+        "multiple, e.g. -x .git -x '*.pyc' -x node_modules."
+    ),
+)
+@click.option(
     "--json",
     "as_json",
     is_flag=True,
@@ -127,6 +151,7 @@ def cmd_upload(
     path: Path,
     title: str | None,
     concurrency: int,
+    parallel: int | None,
     message: str | None,
     password: str | None,
     sender: str | None,
@@ -135,6 +160,7 @@ def cmd_upload(
     max_downloads: int | None,
     recipients: tuple[str, ...],
     schedule: str | None,
+    excludes: tuple[str, ...],
     as_json: bool,
 ) -> None:
     """Upload PATH to transfer.it."""
@@ -143,11 +169,7 @@ def cmd_upload(
     if schedule_ts is not None and not recipients:
         raise click.UsageError("--schedule only makes sense with --recipient")
 
-    size = (
-        sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
-        if path.is_dir()
-        else path.stat().st_size
-    )
+    exclude_opt = list(excludes) if excludes else None
     file_label = path.name + ("/" if path.is_dir() else "")
 
     if as_json:
@@ -164,45 +186,63 @@ def cmd_upload(
                 recipients=list(recipients) if recipients else None,
                 schedule=schedule_ts,
                 concurrency=concurrency,
+                parallel=parallel,
+                exclude=exclude_opt,
             )
         click.echo(_json.dumps(result.to_json_dict(), indent=2, ensure_ascii=False))
         return
 
-    is_folder = path.is_dir()
+    show_per_file = path.is_dir()
+
+    def _rel_label(fp: Path) -> str:
+        try:
+            rel = fp.relative_to(path).as_posix()
+        except ValueError:
+            return fp.name
+        return fp.name if rel == "." else rel
+
+    def _fit_label(s: str) -> str:
+        # Keep the tail (filename) and trim the parent path.  Budget is roughly
+        # a third of the current terminal — matches how `tree` / `ls -F` wrap.
+        budget = max(16, (CONSOLE.width or 80) // 3)
+        if len(s) <= budget:
+            return s
+        return "…" + s[-(budget - 1) :]
 
     with bytes_progress() as progress:
         overall_label = (
-            f"[bold]uploading[/bold] · {file_label}" if is_folder else file_label
+            f"[bold]uploading[/bold] · {file_label}" if show_per_file else file_label
         )
-        overall = progress.add_task(overall_label, total=size or 1)
+        overall = progress.add_task(overall_label, total=1)
 
-        current_task: dict[str, object] = {"task": None, "start_bytes": 0}
+        def on_start(total_bytes: int, _file_count: int) -> None:
+            progress.update(overall, total=total_bytes or 1)
+
+        # fileno -> Rich task id, so per-file bars line up with whichever file
+        # is currently streaming (several can be active at once when
+        # --parallel > 1).
+        active: dict[int, int] = {}
 
         def on_file_start(idx: int, file_path: Path, fsize: int) -> None:
-            if not is_folder:
+            if not show_per_file:
                 return
-            try:
-                rel = file_path.relative_to(path).as_posix()
-            except ValueError:
-                rel = file_path.name
-            current_task["task"] = progress.add_task(rel, total=fsize or 1)
+            active[idx] = progress.add_task(
+                f"[dim]{_fit_label(_rel_label(file_path))}[/dim]", total=fsize or 1
+            )
+
+        def on_file_progress(idx: int, file_path: Path, sent: int, fsize: int) -> None:
+            tid = active.get(idx)
+            if tid is not None:
+                progress.update(tid, completed=sent)
 
         def on_file_done(idx: int, file_path: Path, fsize: int) -> None:
-            if not is_folder:
-                return
-            tid = current_task.get("task")
+            tid = active.pop(idx, None)
             if tid is not None:
                 progress.update(tid, completed=fsize or 1)
                 progress.remove_task(tid)
-            current_task["task"] = None
-            current_task["start_bytes"] = (current_task["start_bytes"] or 0) + fsize
 
         def on_progress(sent: int, total: int) -> None:
             progress.update(overall, completed=sent, total=total or 1)
-            tid = current_task.get("task")
-            if tid is not None:
-                per_file = sent - (current_task.get("start_bytes") or 0)
-                progress.update(tid, completed=max(0, per_file))
 
         with Transferit() as tx:
             result = tx.upload(
@@ -217,12 +257,17 @@ def cmd_upload(
                 recipients=list(recipients) if recipients else None,
                 schedule=schedule_ts,
                 concurrency=concurrency,
+                parallel=parallel,
+                exclude=exclude_opt,
+                on_start=on_start,
                 on_progress=on_progress,
-                on_file_start=on_file_start if is_folder else None,
-                on_file_done=on_file_done if is_folder else None,
+                on_file_start=on_file_start if show_per_file else None,
+                on_file_progress=on_file_progress if show_per_file else None,
+                on_file_done=on_file_done if show_per_file else None,
             )
 
     elapsed = time.monotonic() - started
+    size = result.total_bytes
     rate = (size / elapsed / 1e6) if elapsed else 0
 
     body = kv_grid()

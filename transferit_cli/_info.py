@@ -44,10 +44,7 @@ _SPACE = "    "
     "--json",
     "as_json",
     is_flag=True,
-    help=(
-        "Print machine-readable JSON instead of the formatted tables.  "
-        "Emits {metadata, nodes}."
-    ),
+    help="Print machine-readable JSON instead of the formatted tables.",
 )
 def cmd_info(url_or_xh: str, password: str | None, as_json: bool) -> None:
     """Show transfer-level metadata and a consolidated view of every node.

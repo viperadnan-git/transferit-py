@@ -54,7 +54,7 @@ def main() -> int:
     except click.ClickException as ex:
         ex.show()
         return ex.exit_code
-    except click.Abort:
+    except (click.Abort, KeyboardInterrupt):
         CONSOLE.print("[red]aborted[/red]")
         return 130
     except MegaAPIError as ex:
