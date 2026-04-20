@@ -1,0 +1,86 @@
+[project]
+name = "transferit-py"
+description = "Pure-Python client for transfer.it — upload and download files via the MEGA backend, no browser required."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dynamic = ["version"]
+authors = [
+    { name = "Adnan Ahmad", email = "viperadnan@gmail.com" },
+]
+keywords = ["transfer.it", "mega", "file-sharing", "upload", "download", "cli"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications :: File Sharing",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "httpx>=0.27",
+    "pycryptodomex>=3.21",
+    "websockets>=13.1",
+]
+
+[project.optional-dependencies]
+cli = [
+    "click>=8.1",
+    "rich>=13",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.15.11",
+]
+
+[project.scripts]
+transferit = "transferit_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/viperadnan-git/transferit"
+Repository = "https://github.com/viperadnan-git/transferit"
+Issues = "https://github.com/viperadnan-git/transferit/issues"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0.dev0"
+
+[tool.hatch.build.hooks.vcs]
+version-file = "transferit/_version.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "transferit",
+    "transferit_cli",
+    "README.md",
+    "docs",
+    "LICENSE",
+    "tests",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["transferit", "transferit_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.nizm.hooks]
+ruff = { cmd = "uvx ruff check --fix {staged_files} && uvx ruff format {staged_files}", glob = "*.py" }
+
+[tool.ruff.lint]
+select = ["F", "I"]
+fixable = ["F401", "I"]
