@@ -54,6 +54,12 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
 
+          # PEP 440 pre-release? (aN / bN / rcN / .devN)
+          PRERELEASE_FLAG=""
+          if [[ "${VERSION}" =~ (a|b|rc|\.dev)[0-9] ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
+
           # Fetch categorised notes from GitHub's native generator
           # (driven by .github/release.yml).
           AUTO_NOTES=$(gh api \
@@ -79,4 +85,5 @@ jobs:
             --title "${TAG}" \
             --notes-file /tmp/release-notes.md \
             --verify-tag \
+            ${PRERELEASE_FLAG} \
             dist/*

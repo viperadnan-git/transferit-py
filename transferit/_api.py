@@ -126,9 +126,7 @@ def _user_agent() -> str:
         from . import __version__
     except ImportError:  # pragma: no cover
         __version__ = "0.0.0"
-    return (
-        f"transferit-py/{__version__} (+https://github.com/viperadnan-git/transferit)"
-    )
+    return f"transferit-py/{__version__} (+https://github.com/viperadnan-git/transferit-py)"
 
 
 class MegaAPI:
