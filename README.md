@@ -26,12 +26,23 @@ with Transferit() as tx:
 
 ## Install
 
-| Use case | Command |
-|---|---|
-| Library only | `pip install transferit-py` |
-| Library **+** CLI | `pip install 'transferit-py[cli]'` |
+**As a CLI** — global `transferit` command on your PATH:
 
-Requires **Python 3.11+**. `uv add transferit-py` / `uv add 'transferit-py[cli]'` works the same way.
+```bash
+uv tool install "transferit-py[cli]"      # recommended
+pipx install "transferit-py[cli]"         # alternative
+```
+
+**As a library** — inside a project:
+
+```bash
+uv add transferit-py                      # library only
+uv add "transferit-py[cli]"               # library + CLI entry point
+pip install transferit-py                 # or pip, same story
+pip install "transferit-py[cli]"
+```
+
+Requires **Python 3.11+**.
 
 ## CLI
 
