@@ -257,11 +257,10 @@ async def _ws_upload_one(
                                 16,
                                 crc32b(ct, crc32b(bytes(header[:16]))),
                             )
+                            in_flight[pos] = (length, loop.time() + ACK_TIMEOUT)
                             await ws.send(bytes(header))
                             if ct:
                                 await ws.send(ct)
-
-                            in_flight[pos] = (length, loop.time() + ACK_TIMEOUT)
                     finally:
                         if not recv_task.done():
                             recv_task.cancel()
